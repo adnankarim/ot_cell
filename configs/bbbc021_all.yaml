@@ -20,6 +20,17 @@ image_path: /home/jovyan/bbbc021_all
 data_index_path: /home/jovyan/bbbc021_all/metadata/bbbc021_df_all.csv
 embedding_path: /home/jovyan/ot_cell/data/emb_fp.csv
 
+# OT PAIRING
+use_ot_pairing: false
+ot_epsilon: 0.05
+ot_max_iter: 100
+ot_cost: l2
+
+# FUTURE PHASES (disabled)
+use_transcriptome: false
+use_deconfounding: false
+use_latent_flow: false
+
 # DATA HANDLEMENT 
 augment_train: True 
 normalize: True

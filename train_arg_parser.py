@@ -235,4 +235,45 @@ def get_args_parser():
         type=float,
         default=0.5,
     )
+    # OT pairing flags
+    parser.add_argument(
+        "--use_ot_pairing",
+        action="store_true",
+        help="Replace random ctrl/pert pairing with Optimal Transport (Sinkhorn) pairing.",
+    )
+    parser.add_argument(
+        "--ot_epsilon",
+        type=float,
+        default=0.05,
+        help="Sinkhorn regularization strength for OT pairing.",
+    )
+    parser.add_argument(
+        "--ot_max_iter",
+        type=int,
+        default=100,
+        help="Maximum number of Sinkhorn iterations.",
+    )
+    parser.add_argument(
+        "--ot_cost",
+        type=str,
+        default="l2",
+        choices=["l2", "cosine"],
+        help="Cost function for OT pairing.",
+    )
+    # Future phase flags (disabled by default)
+    parser.add_argument(
+        "--use_transcriptome",
+        action="store_true",
+        help="(Phase 2) Enable transcriptomic conditioning.",
+    )
+    parser.add_argument(
+        "--use_deconfounding",
+        action="store_true",
+        help="(Phase 4) Enable deconfounded latent split.",
+    )
+    parser.add_argument(
+        "--use_latent_flow",
+        action="store_true",
+        help="(Phase 3) Run flow matching in latent space instead of pixel space.",
+    )
     return parser

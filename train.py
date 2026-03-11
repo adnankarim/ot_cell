@@ -28,6 +28,7 @@ from training.eval_loop import eval_model
 from training.grad_scaler import NativeScalerWithGradNormCount as NativeScaler
 from training.load_and_save import load_model, save_model
 from training.train_loop import my_train_one_epoch
+from training.ot_matcher import OTMatcher
 from training.dataloader import CellDataLoader
 logger = logging.getLogger(__name__)
 
@@ -68,6 +69,19 @@ def main(args):
         datamodule = CellDataLoader(args)
         data_loader_train = datamodule.train_dataloader()
         data_loader_test = datamodule.test_dataloader()
+
+        # Instantiate OT matcher if requested
+        use_ot = getattr(args, "use_ot_pairing", False)
+        ot_matcher = OTMatcher(
+            epsilon=getattr(args, "ot_epsilon", 0.05),
+            max_iter=getattr(args, "ot_max_iter", 100),
+            cost=getattr(args, "ot_cost", "l2"),
+        ) if use_ot else None
+        if use_ot:
+            logger.info(
+                f"OT pairing ENABLED (epsilon={args.ot_epsilon}, "
+                f"max_iter={args.ot_max_iter}, cost={args.ot_cost})"
+            )
     else:
         raise NotImplementedError(f"Unsupported dataset {args.dataset}")
 
@@ -146,6 +160,7 @@ def main(args):
                 args=args,
                 datamodule=datamodule,
                 use_initial=args.use_initial,
+                ot_matcher=ot_matcher,
             )
             log_stats = {
                 **{f"train_{k}": v for k, v in train_stats.items()},

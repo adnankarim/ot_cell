@@ -46,6 +46,7 @@ def my_train_one_epoch(
     args: argparse.Namespace,
     datamodule: CellDataLoader,
     use_initial: int,
+    ot_matcher=None,
 ):
     gc.collect()
     model.train(True)
@@ -69,6 +70,13 @@ def my_train_one_epoch(
         x_real, y_trg, y_mod = batch['X'], batch['mols'], batch['y_id']
         x_real_ctrl, x_real_trt = x_real
         x_real_ctrl, x_real_trt = x_real_ctrl.to(device), x_real_trt.to(device)
+
+        # ── OT pairing: re-index treated images to best match each control ──
+        if ot_matcher is not None:
+            perm = ot_matcher.get_indices(x_real_ctrl, x_real_trt).to(device)
+            x_real_trt = x_real_trt[perm]
+        # ────────────────────────────────────────────────────────────────────
+
         y_trg = y_trg.long().to(device)            
         y_org = None 
         z_emb_trg = datamodule.embedding_matrix(y_trg).to(device)
