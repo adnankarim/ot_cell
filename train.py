@@ -96,6 +96,7 @@ def main(args):
         architechture=args.dataset,
         is_discrete=args.discrete_flow_matching,
         use_ema=args.use_ema,
+        condition_dim=datamodule.latent_dim,
     )
     model.to(device)
 

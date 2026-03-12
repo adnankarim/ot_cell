@@ -152,7 +152,7 @@ MODEL_CONFIGS = {
 
 
 def instantiate_model(
-    architechture: str, is_discrete: bool, use_ema: bool
+    architechture: str, is_discrete: bool, use_ema: bool, condition_dim: int = None
 ) -> Union[UNetModel, DiscreteUNetModel]:
     assert (
         architechture in MODEL_CONFIGS
@@ -168,7 +168,10 @@ def instantiate_model(
             **config,
         )
     else:
-        model = UNetModel(**MODEL_CONFIGS[architechture])
+        config = MODEL_CONFIGS[architechture].copy()
+        if condition_dim is not None:
+            config["condition_dim"] = condition_dim
+        model = UNetModel(**config)
     if use_ema:
         return EMA(model=model)
     else:

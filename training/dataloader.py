@@ -41,8 +41,14 @@ class CellDataset:
 
         self.batch_correction = args.batch_correction  # If True, perform batch correction
         self.multimodal = args.multimodal  # If True, handle multiple types of perturbations
+        self.use_transcriptome = getattr(args, "use_transcriptome", False)
+        self.transcriptome_path = getattr(args, "transcriptome_path", None)
+
         if self.trainable_emb or self.batch_correction:
-            self.latent_dim = args.latent_dim
+            self.latent_dim = getattr(args, "latent_dim", None)
+        elif self.use_transcriptome:
+            # latent_dim will be set in initialize_embeddings based on CSV columns
+            pass
 
         if not self.batch_correction:
             self.add_controls = args.add_controls  # Whether to add controls in non-batch correction mode
@@ -83,7 +89,9 @@ class CellDataset:
                                      batch_key=self.batch_key,
                                      multimodal=self.multimodal,
                                      cpd_name=self.cpd_name,
-                                     iter_ctrl=self.iter_ctrl),
+                                     iter_ctrl=self.iter_ctrl,
+                                     use_transcriptome=self.use_transcriptome,
+                                     transcriptome_matrix=getattr(self, "transcriptome_matrix", None)),
             
             'test': CellDatasetFold('test',
                                     self.image_path,
@@ -98,7 +106,9 @@ class CellDataset:
                                     batch_key=self.batch_key,
                                     multimodal=self.multimodal,
                                     cpd_name=self.cpd_name,
-                                    iter_ctrl=False)}
+                                    iter_ctrl=False,
+                                    use_transcriptome=self.use_transcriptome,
+                                    transcriptome_matrix=getattr(self, "transcriptome_matrix", None))}
 
     def _read_folds(self):
         """
@@ -198,6 +208,15 @@ class CellDataset:
             
         else:
             if self.trainable_emb or self.batch_correction:
+                if self.latent_dim is None:
+                    if self.embedding_path is None:
+                        raise ValueError(
+                            "latent_dim must be provided when trainable_emb or "
+                            "batch_correction is enabled without an embedding_path."
+                        )
+
+                    embedding_df = pd.read_csv(self.embedding_path, index_col=0)
+                    self.latent_dim = embedding_df.shape[1]
                 self.latent_dim = self.latent_dim
                 self.embedding_matrix = torch.nn.Embedding(self.n_mol, self.latent_dim).to(self.device).to(torch.float32)
             else:
@@ -208,6 +227,29 @@ class CellDataset:
             
                 self.latent_dim = embedding_matrix.shape[1]
             
+            if self.use_transcriptome:
+                if self.transcriptome_path is None:
+                    raise ValueError("transcriptome_path must be provided if use_transcriptome is True")
+                
+                print(f"Loading transcriptome from {self.transcriptome_path}...")
+                trans_df = pd.read_csv(self.transcriptome_path, index_col=0)
+                
+                # Align with mol_names
+                # Note: self.mol_names are the compounds present in the training set
+                # We need a vector for every compound in mol2id
+                if self.multimodal:
+                    # Multi-modal transcriptome not yet fully defined, but we can support it if needed.
+                    # For now, assume single-modal.
+                    pass
+                
+                # Fetch vectors for all mol_names, in order
+                trans_matrix = trans_df.loc[self.mol_names]
+                self.transcriptome_matrix = torch.tensor(
+                    trans_matrix.values, dtype=torch.float32, device=self.device
+                )
+                self.latent_dim = self.transcriptome_matrix.shape[1]
+                print(f"Transcriptome loaded. Dimension: {self.latent_dim}")
+
             self.mol2id = {mol: id for id, mol in enumerate(self.mol_names)}
 
 class CellDatasetFold(Dataset):
@@ -262,6 +304,8 @@ class CellDatasetFold(Dataset):
         self.multimodal = multimodal
         self.cpd_name = cpd_name
         self.iter_ctrl = iter_ctrl
+        self.use_transcriptome = use_transcriptome
+        self.transcriptome_matrix = transcriptome_matrix
         # Extract variables
         if self.batch_correction:
             self.file_names = data['SAMPLE_KEY']
@@ -343,7 +387,7 @@ class CellDatasetFold(Dataset):
                                     self.dataset_name, 
                                     idx)
         else:
-            return read_files_pert(self.file_names, 
+            result = read_files_pert(self.file_names, 
                                    self.mols, 
                                    self.mol2id, 
                                    self.y2id, 
@@ -356,6 +400,13 @@ class CellDatasetFold(Dataset):
                                    self.multimodal,
                                    self.batch,
                                    self.iter_ctrl,)
+        
+        if self.use_transcriptome and self.transcriptome_matrix is not None:
+            # result['mols'] is the compound ID
+            compound_id = result['mols']
+            result['transcriptome'] = self.transcriptome_matrix[compound_id]
+            
+        return result
 
 class CellDataLoader(LightningDataModule):
     """
