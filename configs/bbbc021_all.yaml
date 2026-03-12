@@ -24,9 +24,10 @@ embedding_path: /home/jovyan/ot_cell/data/emb_fp.csv
 use_ot_pairing: false
 ot_epsilon: 0.05
 ot_max_iter: 100
-ot_cost: l2
+ot_cost: cosine
 ot_hard_pairing: true
-ot_feature_space: pooled_image
+ot_hard_method: hungarian
+ot_feature_space: pooled_mean_std
 
 # FUTURE PHASES (disabled)
 use_transcriptome: false

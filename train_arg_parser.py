@@ -269,9 +269,16 @@ def get_args_parser():
     parser.add_argument(
         "--ot_feature_space",
         type=str,
-        default="pooled_image",
-        choices=["pooled_image", "flatten"],
+        default="pooled_mean_std",
+        choices=["pooled_image", "pooled_mean_std", "flatten"],
         help="Feature space used to compute the OT cost matrix.",
+    )
+    parser.add_argument(
+        "--ot_hard_method",
+        type=str,
+        default="hungarian",
+        choices=["hungarian", "argmax"],
+        help="Hard OT assignment method. 'hungarian' enforces one-to-one matching (recommended).",
     )
     # Future phase flags (disabled by default)
     parser.add_argument(

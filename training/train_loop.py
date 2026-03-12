@@ -72,52 +72,59 @@ def my_train_one_epoch(
         x_real_ctrl, x_real_trt = x_real
         x_real_ctrl, x_real_trt = x_real_ctrl.to(device), x_real_trt.to(device)
 
-        # ── OT pairing: re-match controls to treated, within each batch ──────
-        # Key design choices:
-        #   1. Reorder CONTROLS (not treated) so y_trg/label stays aligned.
-        #   2. Only match within the same experimental batch (plate/batch id)
-        #      to respect CellFlux's same-batch assumption.
+        # Move labels to device early so OT can reorder them if needed
+        y_trg = y_trg.long().to(device)
+        if torch.is_tensor(y_mod):
+            y_mod = y_mod.long().to(device)
+
+        # ── Batch-constrained OT pairing ──────────────────────────────────────
+        # Correct design:
+        #   1. Reorder TREATED images AND their labels together — controls are fixed.
+        #      This keeps y_trg[i] aligned with x_real_trt[i] after re-matching.
+        #   2. Run OT within each experimental batch only (plate/batch id) to
+        #      respect CellFlux's same-batch biological assumption.
+        #   3. Use global permutation mapping so scatter-writes don't corrupt indices.
         if ot_matcher is not None:
-            ot_mode = getattr(args, 'ot_feature_space', 'pooled_image')
-            x_real_ctrl_new = x_real_ctrl.clone()
+            ot_mode = getattr(args, "ot_feature_space", "pooled_mean_std")
 
-            batch_ids = batch.get('batch', None)
-            if batch_ids is None:
-                # Fallback: treat the whole minibatch as one group
-                trt_feat  = get_ot_features(x_real_trt,  mode=ot_mode)
-                ctrl_feat = get_ot_features(x_real_ctrl, mode=ot_mode)
-                perm_ctrl = ot_matcher.get_indices(trt_feat, ctrl_feat).to(device)
-                x_real_ctrl_new = x_real_ctrl[perm_ctrl]
+            batch_ids = batch.get("batch", None)
+            if torch.is_tensor(batch_ids):
+                batch_ids_np = batch_ids.detach().cpu().numpy()
             else:
-                # Group by batch id and run OT within each group
-                if isinstance(batch_ids, torch.Tensor):
-                    batch_ids_list = batch_ids.cpu().tolist()
-                else:
-                    batch_ids_list = list(batch_ids)
+                batch_ids_np = np.array(batch_ids)
 
-                unique_batches = list(dict.fromkeys(batch_ids_list))  # preserve order
-                for b in unique_batches:
-                    idxs = [i for i, bb in enumerate(batch_ids_list) if bb == b]
-                    if len(idxs) <= 1:
-                        continue  # can't do OT with a single sample
-                    idxs_t = torch.tensor(idxs, device=device, dtype=torch.long)
+            # Start with identity permutation; fill in OT-optimal per-batch groups
+            global_perm = torch.arange(x_real_trt.size(0), device=device)
 
-                    ctrl_group = x_real_ctrl[idxs_t]
-                    trt_group  = x_real_trt[idxs_t]
+            for b in np.unique(batch_ids_np):
+                group_idx_np = np.where(batch_ids_np == b)[0]
+                if len(group_idx_np) <= 1:
+                    continue  # OT undefined for singleton groups
 
-                    # OT: for each treated cell, find the best-matching control
-                    trt_feat  = get_ot_features(trt_group,  mode=ot_mode)
-                    ctrl_feat = get_ot_features(ctrl_group, mode=ot_mode)
-                    perm_ctrl = ot_matcher.get_indices(trt_feat, ctrl_feat).to(device)
-                    x_real_ctrl_new[idxs_t] = ctrl_group[perm_ctrl]
+                group_idx = torch.as_tensor(group_idx_np, device=device, dtype=torch.long)
+                ctrl_sub = x_real_ctrl[group_idx]
+                trt_sub  = x_real_trt[group_idx]
 
-            x_real_ctrl = x_real_ctrl_new
-        # ─────────────────────────────────────────────────────────────────────
+                ctrl_feat = get_ot_features(ctrl_sub, mode=ot_mode)
+                pert_feat = get_ot_features(trt_sub,  mode=ot_mode)
 
-        y_trg = y_trg.long().to(device)            
-        y_org = None 
+                # perm[i] = which treated index to assign to ctrl[i]
+                local_perm = ot_matcher.get_indices(ctrl_feat, pert_feat).to(device)
+
+                # Map local indices back to global batch positions
+                global_perm[group_idx] = group_idx[local_perm]
+
+            # Reorder treated images AND their labels consistently
+            x_real_trt = x_real_trt[global_perm]
+            y_trg      = y_trg[global_perm]
+            if torch.is_tensor(y_mod):
+                y_mod = y_mod[global_perm]
+        # ──────────────────────────────────────────────────────────────────────
+
+        y_org = None
         z_emb_trg = datamodule.embedding_matrix(y_trg).to(device)
         samples = None
+
         labels = None
         if torch.rand(1) < args.class_drop_prob:
             conditioning = {}

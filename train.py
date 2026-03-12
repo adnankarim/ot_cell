@@ -77,11 +77,15 @@ def main(args):
             max_iter=getattr(args, "ot_max_iter", 100),
             cost=getattr(args, "ot_cost", "l2"),
             hard_pairing=getattr(args, "ot_hard_pairing", True),
+            hard_method=getattr(args, "ot_hard_method", "hungarian"),
         ) if use_ot else None
         if use_ot:
             logger.info(
-                f"OT pairing ENABLED (epsilon={args.ot_epsilon}, "
-                f"max_iter={args.ot_max_iter}, cost={args.ot_cost})"
+                f"OT pairing ENABLED "
+                f"(epsilon={getattr(args, 'ot_epsilon', 0.05)}, "
+                f"cost={getattr(args, 'ot_cost', 'l2')}, "
+                f"hard_method={getattr(args, 'ot_hard_method', 'hungarian')}, "
+                f"feature_space={getattr(args, 'ot_feature_space', 'pooled_mean_std')})"
             )
     else:
         raise NotImplementedError(f"Unsupported dataset {args.dataset}")

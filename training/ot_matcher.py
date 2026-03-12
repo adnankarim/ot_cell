@@ -1,16 +1,11 @@
 """
-OT Matcher for CellFlux — Phase 1: OT Pairing
+OT Matcher for CellFlux — corrected version
 
-Replaces random control/treated pairing in the training loop with a
-Sinkhorn Optimal Transport assignment. Requires ``pip install pot``.
-
-Design:
-- `get_indices` accepts **pre-computed feature tensors** [B, D].
-  The caller (train_loop.py) is responsible for extracting features via
-  `training.feature_utils.get_ot_features`, keeping this class agnostic
-  to the chosen feature space.
-- Supports hard pairing (argmax of transport plan) or returning the full
-  soft plan for downstream use.
+Key fixes over previous version:
+- Hungarian matching enforces true one-to-one assignment (argmax can assign
+  the same treated cell to multiple controls, which is wrong)
+- Exposes get_cost_matrix() for external use / debugging
+- hard_method: 'hungarian' (default) or 'argmax' (faster, for ablation)
 """
 
 from __future__ import annotations
@@ -26,21 +21,22 @@ except ImportError:
         "The `pot` library is required for OT pairing. Install it with: pip install pot"
     )
 
+from scipy.optimize import linear_sum_assignment
+
 
 class OTMatcher:
     """
-    Computes an Optimal Transport assignment between feature representations
-    of control and treated image batches via the Sinkhorn algorithm.
+    Computes an Optimal Transport-style assignment between control and treated
+    feature representations.
 
     Args:
-        epsilon (float): Sinkhorn regularisation strength.
-            Larger → softer (more uniform) plan; smaller → harder assignments.
+        epsilon (float): Sinkhorn regularisation strength (used for soft plan).
         max_iter (int): Maximum Sinkhorn iterations.
-        cost (str): Pairwise cost function.
-            ``'l2'`` — squared Euclidean distance.
-            ``'cosine'`` — cosine dissimilarity (1 − cosine similarity).
-        hard_pairing (bool): If True (default), return a hard permutation via
-            argmax. If False, return the full soft transport plan.
+        cost (str): ``'l2'`` or ``'cosine'``.
+        hard_pairing (bool): If True, return a hard permutation vector.
+        hard_method (str):
+            ``'hungarian'`` — true one-to-one assignment via scipy linear_sum_assignment.
+            ``'argmax'`` — row-wise argmax of the Sinkhorn plan (may duplicate matches).
     """
 
     def __init__(
@@ -49,11 +45,13 @@ class OTMatcher:
         max_iter: int = 100,
         cost: str = "l2",
         hard_pairing: bool = True,
+        hard_method: str = "hungarian",
     ):
         self.epsilon = epsilon
         self.max_iter = max_iter
         self.cost = cost
         self.hard_pairing = hard_pairing
+        self.hard_method = hard_method
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -62,28 +60,32 @@ class OTMatcher:
     def _cost_matrix(
         self, x_feat: torch.Tensor, y_feat: torch.Tensor
     ) -> torch.Tensor:
-        """
-        Compute pairwise cost matrix C[i, j] between rows of x_feat and y_feat.
-
-        Args:
-            x_feat: [Nx, D] float tensor on CPU.
-            y_feat: [Ny, D] float tensor on CPU.
-
-        Returns:
-            C: [Nx, Ny] float tensor on CPU.
-        """
         if self.cost == "cosine":
             x_n = F.normalize(x_feat, dim=-1)
             y_n = F.normalize(y_feat, dim=-1)
             return 1.0 - (x_n @ y_n.T)
-        else:  # l2 (squared Euclidean)
-            x2 = (x_feat ** 2).sum(1, keepdim=True)          # [Nx, 1]
-            y2 = (y_feat ** 2).sum(1, keepdim=True).T         # [1, Ny]
+        elif self.cost == "l2":
+            x2 = (x_feat ** 2).sum(1, keepdim=True)
+            y2 = (y_feat ** 2).sum(1, keepdim=True).T
             return (x2 + y2 - 2 * (x_feat @ y_feat.T)).clamp(min=0)
+        else:
+            raise ValueError(f"Unknown cost type: {self.cost}")
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+
+    def get_cost_matrix(
+        self,
+        ctrl_feat: torch.Tensor,
+        pert_feat: torch.Tensor,
+    ) -> torch.Tensor:
+        """Return the raw [Nc, Nt] pairwise cost matrix (on CPU)."""
+        with torch.no_grad():
+            return self._cost_matrix(
+                ctrl_feat.float().cpu(),
+                pert_feat.float().cpu(),
+            )
 
     def get_indices(
         self,
@@ -91,40 +93,56 @@ class OTMatcher:
         pert_feat: torch.Tensor,
     ) -> torch.LongTensor:
         """
-        Compute the OT-optimal assignment from control features to
-        treated features.
+        Return permutation ``perm`` such that ``pert[perm[i]]`` is the best
+        OT match for ``ctrl[i]``.
 
-        The caller is responsible for extracting features from raw images
-        (e.g. via ``training.feature_utils.get_ot_features``).
-
-        Args:
-            ctrl_feat: Control feature matrix  [B, D]  (any device)
-            pert_feat: Treated feature matrix  [B, D]  (any device)
+        Both inputs should be pre-computed feature tensors ``[B, D]``.
+        Use ``training.feature_utils.get_ot_features`` to extract them.
 
         Returns:
-            perm: LongTensor of shape [B] — use ``pert_images[perm]`` to
-                  obtain OT-paired treated images aligned to each control.
+            perm: LongTensor ``[B]`` (hard matching) or
+                  FloatTensor ``[B, B]`` (soft Sinkhorn plan when
+                  ``hard_pairing=False``).
         """
         with torch.no_grad():
-            x = ctrl_feat.float().cpu()
-            y = pert_feat.float().cpu()
-
-            C = self._cost_matrix(x, y).numpy()
-
-            # Uniform marginals
-            a = ot.unif(x.shape[0])
-            b = ot.unif(y.shape[0])
-
-            # Sinkhorn transport plan  [Nc, Nt]
-            P = ot.sinkhorn(
-                a, b, C,
-                reg=self.epsilon,
-                numItermax=self.max_iter,
-                warn=False,
-            )
+            C = self.get_cost_matrix(ctrl_feat, pert_feat).numpy()
 
             if self.hard_pairing:
-                perm = P.argmax(axis=1)
-                return torch.from_numpy(perm.astype(np.int64)).long()
+                if self.hard_method == "hungarian":
+                    # True one-to-one assignment — O(n³) but exact
+                    row_ind, col_ind = linear_sum_assignment(C)
+                    perm = np.full(C.shape[0], -1, dtype=np.int64)
+                    perm[row_ind] = col_ind
+                    if (perm < 0).any():
+                        raise RuntimeError(
+                            "Hungarian matching produced incomplete assignment. "
+                            "Ensure ctrl and pert group sizes match."
+                        )
+                    return torch.from_numpy(perm).long()
+
+                elif self.hard_method == "argmax":
+                    # Row-wise argmax of Sinkhorn plan (fast, not one-to-one)
+                    a = ot.unif(C.shape[0])
+                    b = ot.unif(C.shape[1])
+                    P = ot.sinkhorn(
+                        a, b, C,
+                        reg=self.epsilon,
+                        numItermax=self.max_iter,
+                        warn=False,
+                    )
+                    return torch.from_numpy(P.argmax(axis=1).astype(np.int64)).long()
+
+                else:
+                    raise ValueError(f"Unknown hard_method: {self.hard_method}")
+
             else:
+                # Return full soft transport plan
+                a = ot.unif(C.shape[0])
+                b = ot.unif(C.shape[1])
+                P = ot.sinkhorn(
+                    a, b, C,
+                    reg=self.epsilon,
+                    numItermax=self.max_iter,
+                    warn=False,
+                )
                 return torch.from_numpy(P.astype(np.float32))
