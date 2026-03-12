@@ -24,6 +24,15 @@ embedding_path: /path/to/your/embeddings/csv/rxrx1_gene2vec_embeddings.csv
 augment_train: True
 normalize: True
 
+# OT PAIRING
+use_ot_pairing: false
+ot_epsilon: 0.05
+ot_max_iter: 100
+ot_cost: l2
+ot_hard_pairing: true
+ot_feature_space: pooled_image
 
-
-
+# FUTURE PHASES (disabled)
+use_transcriptome: false
+use_deconfounding: false
+use_latent_flow: false

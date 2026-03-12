@@ -76,6 +76,7 @@ def main(args):
             epsilon=getattr(args, "ot_epsilon", 0.05),
             max_iter=getattr(args, "ot_max_iter", 100),
             cost=getattr(args, "ot_cost", "l2"),
+            hard_pairing=getattr(args, "ot_hard_pairing", True),
         ) if use_ot else None
         if use_ot:
             logger.info(

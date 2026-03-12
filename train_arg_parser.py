@@ -260,6 +260,19 @@ def get_args_parser():
         choices=["l2", "cosine"],
         help="Cost function for OT pairing.",
     )
+    parser.add_argument(
+        "--ot_hard_pairing",
+        action="store_true",
+        default=True,
+        help="Use hard (argmax) assignment from OT plan. When False, returns the soft plan.",
+    )
+    parser.add_argument(
+        "--ot_feature_space",
+        type=str,
+        default="pooled_image",
+        choices=["pooled_image", "flatten"],
+        help="Feature space used to compute the OT cost matrix.",
+    )
     # Future phase flags (disabled by default)
     parser.add_argument(
         "--use_transcriptome",

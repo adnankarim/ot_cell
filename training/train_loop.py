@@ -11,6 +11,7 @@ import random
 import time
 from typing import Iterable
 from training.dataloader import CellDataLoader
+from training.feature_utils import get_ot_features
 import torch
 from flow_matching.path import CondOTProbPath, MixtureDiscreteProbPath
 from flow_matching.path.scheduler import PolynomialConvexScheduler
@@ -73,7 +74,10 @@ def my_train_one_epoch(
 
         # ── OT pairing: re-index treated images to best match each control ──
         if ot_matcher is not None:
-            perm = ot_matcher.get_indices(x_real_ctrl, x_real_trt).to(device)
+            ot_mode = getattr(args, 'ot_feature_space', 'pooled_image')
+            ctrl_feat = get_ot_features(x_real_ctrl, mode=ot_mode)
+            pert_feat  = get_ot_features(x_real_trt,  mode=ot_mode)
+            perm = ot_matcher.get_indices(ctrl_feat, pert_feat).to(device)
             x_real_trt = x_real_trt[perm]
         # ────────────────────────────────────────────────────────────────────
 

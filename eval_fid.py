@@ -134,11 +134,10 @@ if __name__ == '__main__':
         dynamic_subset_size = min(len(generated_samples[key]), 100)
 
         kid_metric_per_class = KernelInceptionDistance(subset_size=dynamic_subset_size, normalize=True).to('cuda', non_blocking=True)
-    
-        kid_metric.update(torch.tensor(target_samples[key]).to('cuda'), real=True)
-        kid_metric.update(torch.tensor(generated_samples[key]).to('cuda'), real=False)
+        kid_metric_per_class.update(torch.tensor(target_samples[key]).to('cuda'), real=True)
+        kid_metric_per_class.update(torch.tensor(generated_samples[key]).to('cuda'), real=False)
         try:
-            kid_mean_class, kid_std_class = kid_metric.compute()
+            kid_mean_class, kid_std_class = kid_metric_per_class.compute()
         except:
             continue
         
