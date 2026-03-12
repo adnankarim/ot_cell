@@ -236,8 +236,16 @@ if __name__ == "__main__":
     args = get_args_parser()
     args = args.parse_args()
     yaml_config = load_yaml_config(args.config)
+    # Merge: YAML provides defaults, but explicit CLI flags take precedence.
+    # Only fill in YAML keys that are not already set (i.e. still at their
+    # argparse default). Keys unique to YAML (e.g. dataset paths) are always applied.
     args_dict = vars(args)
-    args_dict.update(yaml_config)
+    parser_defaults = {a.dest: a.default for a in get_args_parser()._actions}
+    for key, yaml_val in yaml_config.items():
+        cli_val = args_dict.get(key)
+        # Apply YAML value only if CLI is still at its default (user didn't override)
+        if key not in args_dict or cli_val == parser_defaults.get(key):
+            args_dict[key] = yaml_val
     args = SimpleNamespace(**args_dict)
     if args.output_dir:
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)

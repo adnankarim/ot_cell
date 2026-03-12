@@ -36,7 +36,7 @@ class CellDataset:
         self.normalize = args.normalize  # Controls whether to normalize input images
         self.mol_list = args.mol_list  # List of molecules to include
         self.ood_set = args.ood_set  # List of out-of-distribution drugs
-        self.trainable_emb = args.batch_correction  # Whether embeddings are trainable
+        self.trainable_emb = args.trainable_emb  # Whether embeddings are trainable (fixed from args.batch_correction)
         self.dataset_name = args.dataset_name  # Name of the dataset
 
         self.batch_correction = args.batch_correction  # If True, perform batch correction
