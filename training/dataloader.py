@@ -274,7 +274,9 @@ class CellDatasetFold(Dataset):
                  batch_key="BATCH", 
                  multimodal=False, 
                  cpd_name="CPD_NAME",
-                 iter_ctrl=False):
+                 iter_ctrl=False,
+                 use_transcriptome=False,
+                 transcriptome_matrix=None):
         """
         Initialize the CellDatasetFold instance.
         
