@@ -83,6 +83,7 @@ dependencies:
       - threadpoolctl==3.6.0
       - torch==2.5.1+cu124
       - torch-fidelity==0.3.0
+      - pot==0.9.4
       - torchdiffeq==0.2.5
       - torchmetrics==1.7.4
       - torchvision==0.20.1+cu124
