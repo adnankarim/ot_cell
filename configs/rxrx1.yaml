@@ -19,6 +19,7 @@ modality_list:
 image_path: /path/to/your/datasets/rxrx1/
 data_index_path: /path/to/your/datasets/rxrx1/metadata/rxrx1_df_subset.csv # subset for eval only, need to be downloaded from https://huggingface.co/suyc21/CellFlux
 embedding_path: /path/to/your/embeddings/csv/rxrx1_gene2vec_embeddings.csv
+transcriptome_path: null
 
 # DATA HANDLEMENT 
 augment_train: True

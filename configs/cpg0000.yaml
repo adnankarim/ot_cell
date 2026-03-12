@@ -20,6 +20,7 @@ modality_list:
 image_path: /path/to/your/datasets/cpg0000_u2os_normalized_segmented_large
 data_index_path: /path/to/your/datasets/cpg0000_u2os_normalized_segmented_large/metadata/metadata_large_gene2vec_subset.csv # subset for eval only, need to be downloaded from https://huggingface.co/suyc21/CellFlux
 embedding_path: /path/to/your/embeddings/cpg0000_combined_embeddings.csv
+transcriptome_path: null
 
 augment_train: True 
 normalize: True

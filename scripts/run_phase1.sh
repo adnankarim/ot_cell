@@ -6,7 +6,7 @@
 
 # ── 0. Smoke test (1 batch, fast, no GPU required) ──────────
 # Run this first to confirm OT code doesn't crash
-python train.py \
+python3 train.py \
     --dataset=bbbc021 \
     --config=bbbc021_all \
     --batch_size=32 \
@@ -34,7 +34,7 @@ echo ""
 echo "If smoke test passes, run the full experiments below."
 
 # ── 1. Baseline (matches original CellFlux paper exactly) ───
-python train.py \
+python3 train.py \
     --dataset=bbbc021 \
     --config=bbbc021_all \
     --batch_size=32 \
@@ -57,7 +57,7 @@ python train.py \
     --output_dir=outputs/baseline_200ep
 
 # ── 2. OT-CellFlux (corrected, recommended settings) ────────
-python train.py \
+python3 train.py \
     --dataset=bbbc021 \
     --config=bbbc021_all \
     --batch_size=32 \

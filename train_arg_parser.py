@@ -287,6 +287,12 @@ def get_args_parser():
         help="(Phase 2) Enable transcriptomic conditioning.",
     )
     parser.add_argument(
+        "--transcriptome_path",
+        type=str,
+        default=None,
+        help="(Phase 2) Path to gene expression CSV for conditioning.",
+    )
+    parser.add_argument(
         "--use_deconfounding",
         action="store_true",
         help="(Phase 4) Enable deconfounded latent split.",
