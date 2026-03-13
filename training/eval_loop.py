@@ -113,9 +113,7 @@ def eval_model(
         solver = ODESolver(velocity_model=cfg_scaled_model)
         ode_opts = args.ode_options
 
-    fid_metric = FrechetInceptionDistance(normalize=True).to(
-        device=device, non_blocking=True
-    )
+    fid_metric = FrechetInceptionDistance(normalize=True).to("cpu")
 
     num_synthetic = 0
     snapshots_saved = False
@@ -229,8 +227,8 @@ def eval_model(
             real_samples = real_samples.to(torch.float32) / 255.0
             
             
-            fid_metric.update(real_samples, real=True)
-            fid_metric.update(synthetic_samples, real=False)
+            fid_metric.update(real_samples.cpu(), real=True)
+            fid_metric.update(synthetic_samples.cpu(), real=False)
             num_synthetic += synthetic_samples.shape[0]
             if not snapshots_saved and args.output_dir:
                 save_image(

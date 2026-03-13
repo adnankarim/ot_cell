@@ -1,3 +1,4 @@
+import logging
 import os
 from pathlib import Path
 import pdb
@@ -7,6 +8,8 @@ import torch
 from torch.utils.data import Dataset
 from pytorch_lightning import LightningDataModule
 from training.data_utils import CustomTransform, read_files_batch, read_files_pert
+
+logger = logging.getLogger(__name__)
 
 class CellDataset:
     """
@@ -377,38 +380,55 @@ class CellDatasetFold(Dataset):
         Returns:
             dict: Dictionary containing the image tensor, one-hot encoded molecule, annotation ID, dose, and file name.
         """
-        # Image must be fetched from disk
-        if self.batch_correction:
-            return read_files_batch(self.file_names, 
-                                    self.mols,
-                                    self.mol2id,
-                                    self.y2id, 
-                                    self.y, 
-                                    self.transform,
-                                    self.image_path, 
-                                    self.dataset_name, 
-                                    idx)
-        else:
-            result = read_files_pert(self.file_names, 
-                                   self.mols, 
-                                   self.mol2id, 
-                                   self.y2id, 
-                                   self.dose, 
-                                   self.y, 
-                                   self.transform, 
-                                   self.image_path, 
-                                   self.dataset_name,
-                                   idx,
-                                   self.multimodal,
-                                   self.batch,
-                                   self.iter_ctrl,)
-        
-        if self.use_transcriptome and self.transcriptome_matrix is not None:
-            # result['mols'] is the compound ID
-            compound_id = result['mols']
-            result['transcriptome'] = self.transcriptome_matrix[compound_id]
-            
-        return result
+        for attempt in range(5):
+            try:
+                # Image must be fetched from disk
+                if self.batch_correction:
+                    return read_files_batch(
+                        self.file_names,
+                        self.mols,
+                        self.mol2id,
+                        self.y2id,
+                        self.y,
+                        self.transform,
+                        self.image_path,
+                        self.dataset_name,
+                        idx,
+                    )
+
+                result = read_files_pert(
+                    self.file_names,
+                    self.mols,
+                    self.mol2id,
+                    self.y2id,
+                    self.dose,
+                    self.y,
+                    self.transform,
+                    self.image_path,
+                    self.dataset_name,
+                    idx,
+                    self.multimodal,
+                    self.batch,
+                    self.iter_ctrl,
+                )
+
+                if self.use_transcriptome and self.transcriptome_matrix is not None:
+                    # result['mols'] is the compound ID
+                    compound_id = result['mols']
+                    result['transcriptome'] = self.transcriptome_matrix[compound_id]
+
+                return result
+            except (FileNotFoundError, PermissionError, OSError) as exc:
+                if self.fold != "train" or attempt == 4:
+                    raise
+
+                logger.warning(
+                    "Retrying unreadable training sample at idx=%s after %s: %s",
+                    idx,
+                    type(exc).__name__,
+                    exc,
+                )
+                idx = np.random.randint(0, len(self))
 
 class CellDataLoader(LightningDataModule):
     """
