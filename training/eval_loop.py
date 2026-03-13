@@ -39,6 +39,35 @@ logger = logging.getLogger(__name__)
 PRINT_FREQUENCY = 50
 
 
+def _matrix_sqrt_symmetric(matrix: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
+    matrix = (matrix + matrix.T) * 0.5
+    eigvals, eigvecs = torch.linalg.eigh(matrix)
+    eigvals = torch.clamp(eigvals, min=eps)
+    return (eigvecs * eigvals.sqrt().unsqueeze(0)) @ eigvecs.T
+
+
+def _compute_fid_on_device(fid_metric: FrechetInceptionDistance) -> torch.Tensor:
+    if fid_metric.real_features_num_samples < 2 or fid_metric.fake_features_num_samples < 2:
+        raise RuntimeError("More than one sample is required for both the real and fake distributions to compute FID")
+
+    mean_real = fid_metric.real_features_sum / fid_metric.real_features_num_samples
+    mean_fake = fid_metric.fake_features_sum / fid_metric.fake_features_num_samples
+
+    cov_real_num = fid_metric.real_features_cov_sum - fid_metric.real_features_num_samples * torch.outer(mean_real, mean_real)
+    cov_fake_num = fid_metric.fake_features_cov_sum - fid_metric.fake_features_num_samples * torch.outer(mean_fake, mean_fake)
+    cov_real = cov_real_num / (fid_metric.real_features_num_samples - 1)
+    cov_fake = cov_fake_num / (fid_metric.fake_features_num_samples - 1)
+
+    cov_real = (cov_real + cov_real.T) * 0.5
+    cov_fake = (cov_fake + cov_fake.T) * 0.5
+    cov_real_sqrt = _matrix_sqrt_symmetric(cov_real)
+    cov_mean = _matrix_sqrt_symmetric(cov_real_sqrt @ cov_fake @ cov_real_sqrt)
+
+    diff = mean_real - mean_fake
+    fid = diff.square().sum() + torch.trace(cov_real + cov_fake - 2.0 * cov_mean)
+    return fid.to(fid_metric.orig_dtype)
+
+
 class CFGScaledModel(ModelWrapper):
     def __init__(self, model: Module):
         super().__init__(model)
@@ -113,7 +142,9 @@ def eval_model(
         solver = ODESolver(velocity_model=cfg_scaled_model)
         ode_opts = args.ode_options
 
-    fid_metric = FrechetInceptionDistance(normalize=True).to("cpu")
+    fid_metric = FrechetInceptionDistance(normalize=True).to(
+        device=device, non_blocking=True
+    )
 
     num_synthetic = 0
     snapshots_saved = False
@@ -227,8 +258,8 @@ def eval_model(
             real_samples = real_samples.to(torch.float32) / 255.0
             
             
-            fid_metric.update(real_samples.cpu(), real=True)
-            fid_metric.update(synthetic_samples.cpu(), real=False)
+            fid_metric.update(real_samples, real=True)
+            fid_metric.update(synthetic_samples, real=False)
             num_synthetic += synthetic_samples.shape[0]
             if not snapshots_saved and args.output_dir:
                 save_image(
@@ -272,7 +303,7 @@ def eval_model(
     with open(f'{image_dir}/trt2ctrl_idx.json', 'w') as f:
         json.dump(trt2ctrl_idx, f, indent=4)
         f.flush()
-    return {"fid": float(fid_metric.compute().detach().cpu())}
+    return {"fid": float(_compute_fid_on_device(fid_metric).detach().cpu())}
 
 
 def save_interpolation_grid(
